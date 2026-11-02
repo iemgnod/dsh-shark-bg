@@ -1,6 +1,6 @@
 {
   "name": "dsh-shark-bg",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "在 Harness Web 界面背景中游动的 ASCII 鲨鱼",
   "type": "module",

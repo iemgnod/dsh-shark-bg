@@ -28,7 +28,7 @@ dsh plugin install https://github.com/iemgnod/dsh-shark-bg
 | 项目 | 说明 |
 | --- | --- |
 | 启用背景 | 关掉后界面恢复默认外观，设置会保留 |
-| 界面遮罩 | 越大海水越淡、文字越清楚；越小鲨鱼越明显 |
+| 界面遮罩 | 越大海水越淡、文字越清楚；越小鲨鱼越明显（默认 40%） |
 | 输入区遮罩 | 底部输入框与聊天流交界处的浓度 |
 | 鲨鱼数量 | 0 表示只留海水与鱼群；数量多时依次加入更小的种类 |
 | 鲨鱼体型 | 相对默认体长的倍率 |
@@ -42,7 +42,7 @@ dsh plugin install https://github.com/iemgnod/dsh-shark-bg
 底层仍是两个 CSS 变量，需要脚本化时可以自己改：
 
 ```css
-html { --shark-veil: 58%; --shark-veil-strong: 88%; }
+html { --shark-veil: 40%; --shark-veil-strong: 88%; }
 ```
 
 ## 实现要点

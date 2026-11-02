@@ -1562,7 +1562,7 @@ window.__ModuleLoader__.load({
     /** 与宿主 src/config.js 的 DEFAULTS 保持一致；页面拿不到宿主时用它兜底。 */
     const FALLBACK = {
       enabled: true,
-      veil: 58,
+      veil: 40,
       veilStrong: 88,
       sharkCount: 6,
       sharkSize: 1,
@@ -1587,7 +1587,7 @@ window.__ModuleLoader__.load({
          Raise it for a subtler ocean, lower it for a bolder one. The values
          come from the settings page (--shark-veil / --shark-veil-strong). */
       html {
-        --shark-veil: 58%;
+        --shark-veil: 40%;
         --shark-veil-strong: 88%;
       }
 
@@ -1741,7 +1741,8 @@ window.__ModuleLoader__.load({
         prev.sharkCount !== cfg.sharkCount ||
         prev.sharkSize !== cfg.sharkSize ||
         prev.fishDensity !== cfg.fishDensity;
-      if (shapeChanged) scene.reseed(cfg);
+      // 拖动滑块时会连续触发；重建世界很贵，合并成一次。
+      if (shapeChanged) scene.scheduleReseed(cfg);
 
       scene.setPaused(cfg.still);
     }
@@ -1875,6 +1876,16 @@ window.__ModuleLoader__.load({
         if (paused) still();
       }
 
+      // 拖动中的预览会连续改这些值；合并成一次重建，避免画面反复重置。
+      let reseedTimer = 0;
+      function scheduleReseed(cfg) {
+        if (reseedTimer) clearTimeout(reseedTimer);
+        reseedTimer = setTimeout(() => {
+          reseedTimer = 0;
+          reseed(cfg);
+        }, 220);
+      }
+
       const scene = {
         canvas,
         world,
@@ -1884,6 +1895,7 @@ window.__ModuleLoader__.load({
         cfg: initial,
         setPaused,
         reseed,
+        scheduleReseed,
       };
 
       if (reduce.matches) paused = true;
@@ -1921,6 +1933,7 @@ window.__ModuleLoader__.load({
       scene.dispose = () => {
         disposed = true;
         if (raf) cancelAnimationFrame(raf);
+        if (reseedTimer) clearTimeout(reseedTimer);
         clearTimeout(probeTimer);
         mo.disconnect();
         ro.disconnect();
@@ -1992,7 +2005,34 @@ window.__ModuleLoader__.load({
 .dsh-shark__label{font-size:13px;font-weight:500}
 .dsh-shark__note{color:var(--r-muted);font-size:12px;margin-top:2px}
 .dsh-shark__control{flex:none;min-width:230px;display:flex;align-items:center;justify-content:flex-end;gap:10px}
-.dsh-shark__control input[type=range]{width:150px;accent-color:var(--r-accent)}
+.dsh-shark__control input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:160px;height:28px;margin:0;background:transparent;
+  cursor:pointer;touch-action:none;
+  --fill:0%;
+}
+.dsh-shark__control input[type=range]::-webkit-slider-runnable-track{
+  height:4px;border-radius:2px;border:none;
+  background:linear-gradient(90deg,var(--r-accent) 0,var(--r-accent) var(--fill),var(--r-border-strong) var(--fill),var(--r-border-strong) 100%);
+}
+.dsh-shark__control input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:14px;height:14px;margin-top:-5px;border-radius:50%;
+  background:var(--r-accent);border:2px solid var(--r-bg);
+  box-shadow:0 1px 4px rgba(0,0,0,.25);
+  transition:transform .12s;
+}
+.dsh-shark__control input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
+.dsh-shark__control input[type=range]:active::-webkit-slider-thumb{transform:scale(1.28)}
+.dsh-shark__control input[type=range]:focus-visible{outline:none}
+.dsh-shark__control input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px color-mix(in srgb,var(--r-accent) 28%,transparent)}
+.dsh-shark__control input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--r-border-strong)}
+.dsh-shark__control input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--r-accent)}
+.dsh-shark__control input[type=range]::-moz-range-thumb{
+  width:14px;height:14px;border-radius:50%;border:2px solid var(--r-bg);
+  background:var(--r-accent);box-shadow:0 1px 4px rgba(0,0,0,.25);
+}
+.dsh-shark__control input[type=range]:disabled{cursor:not-allowed;opacity:.5}
 .dsh-shark__value{min-width:52px;text-align:right;font-variant-numeric:tabular-nums;color:var(--r-secondary);font-size:12px}
 .dsh-shark__switch{position:relative;width:38px;height:22px;flex:none}
 .dsh-shark__switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
@@ -2084,9 +2124,33 @@ window.__ModuleLoader__.load({
       unavailable: 'Host service unreachable — check that the plugin is loaded.',
     };
 
-    /** 一行滑块；数值由宿主归一化后回传，这里只负责显示。 */
+    /**
+     * 一行滑块。拖动过程中只更新本地草稿并即时预览（不落盘），
+     * 松手/失焦/键盘操作结束才提交 —— 否则每次 onChange 都发请求，
+     * 而且 busy 会把 input 置为 disabled，浏览器直接中断正在进行的拖拽。
+     */
     function Slider(props) {
-      const { id, label, note, value, min, max, step, format, disabled, onChange, t } = props;
+      const { id, label, note, value, min, max, step, format, disabled, onChange, onPreview, t } = props;
+      const [draft, setDraft] = useState(value);
+      const dragging = React.useRef(false);
+      // 预览会把 value 提前改成新值，所以“是否要提交”只能靠这个脏标记判断。
+      const dirty = React.useRef(false);
+
+      // 外部值变化（重新载入、其他行保存后回传）时同步草稿；拖拽中不打断。
+      useEffect(() => {
+        if (!dragging.current) setDraft(value);
+      }, [value]);
+
+      const commit = useCallback((next) => {
+        dragging.current = false;
+        if (!dirty.current) return;
+        dirty.current = false;
+        onChange(next);
+      }, [onChange]);
+
+      const span = max - min;
+      const pct = span > 0 ? Math.min(100, Math.max(0, ((draft - min) / span) * 100)) : 0;
+
       return React.createElement('div', { className: 'dsh-shark__row' },
         React.createElement('div', null,
           React.createElement('div', { className: 'dsh-shark__label' }, label),
@@ -2098,12 +2162,25 @@ window.__ModuleLoader__.load({
             min,
             max,
             step,
-            value,
+            value: draft,
             disabled,
-            onChange: (event) => onChange(Number(event.target.value)),
+            style: { '--fill': `${pct}%` },
+            onChange: (event) => {
+              const next = Number(event.target.value);
+              dragging.current = true;
+              dirty.current = true;
+              setDraft(next);
+              if (onPreview) onPreview(next);
+            },
+            onPointerUp: (event) => commit(Number(event.currentTarget.value)),
+            onPointerCancel: (event) => commit(Number(event.currentTarget.value)),
+            onKeyUp: (event) => commit(Number(event.currentTarget.value)),
+            onBlur: (event) => {
+              if (dragging.current) commit(Number(event.currentTarget.value));
+            },
           }),
           React.createElement('span', { className: 'dsh-shark__value' },
-            format ? format(value) : String(value))))
+            format ? format(draft) : String(draft))))
     }
 
     function Toggle(props) {
@@ -2151,11 +2228,18 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false);
       const [error, setError] = useState('');
       const [status, setStatus] = useState('');
+      // 只让最后一次保存的响应生效：拖动时可能连续提交多次。
+      const saveSeq = React.useRef(0);
+      // 当前配置的最新快照，供预览合并用（setState 的 updater 里不应有副作用）。
+      const latest = React.useRef(null);
+      useEffect(() => { latest.current = state; }, [state]);
 
       const load = useCallback(async () => {
         try {
           const data = await requestState('GET');
-          setState(normalizeClientConfig(data?.state));
+          const next = normalizeClientConfig(data?.state);
+          latest.current = next;
+          setState(next);
           setError('');
         } catch (failure) {
           setError(`${t('loadFailed')}：${failure.message}`);
@@ -2164,24 +2248,42 @@ window.__ModuleLoader__.load({
 
       useEffect(() => { load(); }, [load]);
 
+      /** 拖动中的即时预览：只广播给背景层，不落盘、不发请求。 */
+      const preview = useCallback((patch) => {
+        const base = latest.current;
+        if (!base) return;
+        const next = normalizeClientConfig({ ...base, ...patch });
+        latest.current = next;
+        setState(next);
+        window.dispatchEvent(new CustomEvent(CONFIG_EVENT, { detail: next }));
+      }, []);
+
       const save = useCallback(async (patch) => {
         // 先就地更新，滑块才跟手；失败时用服务端回传的状态覆盖回来。
-        setState((prev) => (prev ? normalizeClientConfig({ ...prev, ...patch }) : prev));
+        const optimistic = latest.current ? normalizeClientConfig({ ...latest.current, ...patch }) : null;
+        if (optimistic) {
+          latest.current = optimistic;
+          setState(optimistic);
+        }
+        const seq = ++saveSeq.current;
         setBusy(true);
         setStatus(t('saving'));
         try {
           const data = await requestState('POST', patch);
+          if (seq !== saveSeq.current) return;
           const next = normalizeClientConfig(data?.state);
+          latest.current = next;
           setState(next);
           window.dispatchEvent(new CustomEvent(CONFIG_EVENT, { detail: next }));
           setStatus(t('saved'));
           setError('');
         } catch (failure) {
+          if (seq !== saveSeq.current) return;
           setError(`${t('saveFailed')}：${failure.message}`);
           setStatus('');
           load();
         } finally {
-          setBusy(false);
+          if (seq === saveSeq.current) setBusy(false);
         }
       }, [load, t]);
 
@@ -2193,7 +2295,8 @@ window.__ModuleLoader__.load({
             : React.createElement('div', { className: 'dsh-shark__status' }, t('saving')));
       }
 
-      const disabled = busy;
+      // 滑块本身不禁用：保存期间把 input 置为 disabled 会中断正在进行的拖拽。
+      const disabled = false;
 
       return React.createElement('div', { className: 'dsh-shark dsh-shark__page' },
         React.createElement('h2', { className: 'dsh-shark__title' }, t('title')),
@@ -2219,6 +2322,7 @@ window.__ModuleLoader__.load({
           format: (value) => `${value}%`,
           disabled,
           onChange: (value) => save({ veil: value }),
+          onPreview: (value) => preview({ veil: value }),
           t,
         }),
 
@@ -2233,6 +2337,7 @@ window.__ModuleLoader__.load({
           format: (value) => `${value}%`,
           disabled,
           onChange: (value) => save({ veilStrong: value }),
+          onPreview: (value) => preview({ veilStrong: value }),
           t,
         }),
 
@@ -2246,6 +2351,7 @@ window.__ModuleLoader__.load({
           step: 1,
           disabled,
           onChange: (value) => save({ sharkCount: value }),
+          onPreview: (value) => preview({ sharkCount: value }),
           t,
         }),
 
@@ -2260,6 +2366,7 @@ window.__ModuleLoader__.load({
           format: (value) => `${value.toFixed(2)}×`,
           disabled,
           onChange: (value) => save({ sharkSize: value }),
+          onPreview: (value) => preview({ sharkSize: value }),
           t,
         }),
 
@@ -2274,6 +2381,7 @@ window.__ModuleLoader__.load({
           format: (value) => `${value}%`,
           disabled,
           onChange: (value) => save({ fishDensity: value }),
+          onPreview: (value) => preview({ fishDensity: value }),
           t,
         }),
 
@@ -2288,6 +2396,7 @@ window.__ModuleLoader__.load({
           format: (value) => `${value.toFixed(2)}×`,
           disabled,
           onChange: (value) => save({ speed: value }),
+          onPreview: (value) => preview({ speed: value }),
           t,
         }),
 
@@ -2302,6 +2411,7 @@ window.__ModuleLoader__.load({
           format: (value) => `${value.toFixed(2)}×`,
           disabled,
           onChange: (value) => save({ gridScale: value }),
+          onPreview: (value) => preview({ gridScale: value }),
           t,
         }),
 
