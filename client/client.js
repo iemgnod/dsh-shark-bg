@@ -9,8 +9,10 @@
  */
 window.__ModuleLoader__.load({
   id: 'dsh-shark-bg',
-  factory() {
+  factory(require) {
     'use strict';
+    const React = require('react');
+    const { useCallback, useEffect, useState } = React;
 
     // ── math ────────────────────────────────────────────────────────────
     const TAU = Math.PI * 2;
@@ -78,20 +80,42 @@ window.__ModuleLoader__.load({
     const FISH_FLEE_K = 1100;
     const BLIND_COS = -0.6;
 
-    /** Sharks in the water; size is relative to the biggest. */
-    const SHARKS = [
+    /**
+     * The cast, largest first. `sharkCount` takes the first N of these, so a
+     * bigger number adds the smaller species instead of cloning the big one.
+     */
+    const SHARK_CAST = [
       { kind: 'classic', size: 1 },
       { kind: 'classic', size: 0.74 },
       { kind: 'hammerhead', size: 0.88 },
       { kind: 'tiger', size: 0.8 },
       { kind: 'mako', size: 0.62 },
       { kind: 'zebra', size: 0.56 },
+      { kind: 'thresher', size: 0.82 },
+      { kind: 'nurse', size: 0.7 },
+      { kind: 'greathammer', size: 0.9 },
+      { kind: 'classic', size: 0.46 },
+      { kind: 'mako', size: 0.4 },
+      { kind: 'zebra', size: 0.34 },
     ];
+
+    /** Pick `count` sharks from the cast, cycling when more are asked for. */
+    function sharksFor(count) {
+      const out = [];
+      for (let i = 0; i < count; i++) out.push(SHARK_CAST[i % SHARK_CAST.length]);
+      return out;
+    }
 
     class World {
       constructor(sharkSpecs, fishCount) {
         this.sharkSpecs = sharkSpecs;
         this.fishCount = fishCount;
+        /** 游动速度倍率：1 是原始速度。 */
+        this.speed = 1;
+        /** 鱼群密度（百分比），45 与原始版本相当。 */
+        this.fishDensity = 45;
+        /** 鲨鱼体型倍率：1 是默认尺寸。 */
+        this.sharkScale = 1;
         this.width = 0;
         this.height = 0;
         this.time = 0;
@@ -134,7 +158,7 @@ window.__ModuleLoader__.load({
         const W = this.width;
         const H = this.height;
         const minSide = Math.min(W, H);
-        const baseLength = clamp(minSide * 0.34, 150, 380);
+        const baseLength = clamp(minSide * 0.34, 150, 380) * this.sharkScale;
         const sharkCount = this.sharkSpecs.length;
 
         this.sharks = [];
@@ -174,7 +198,11 @@ window.__ModuleLoader__.load({
         // Smaller (farther) sharks draw first so the big one swims over them.
         this.sharks.sort((a, b) => a.length - b.length);
 
-        const total = this.fishCount ?? clamp(Math.round((W * H) / 9000), 70, 220);
+        const total = this.fishCount ?? clamp(
+          Math.round(((W * H) / 9000) * (this.fishDensity / 45)),
+          0,
+          400,
+        );
         this.fish = [];
         while (this.fish.length < total) {
           const species = pickSpecies();
@@ -221,10 +249,10 @@ window.__ModuleLoader__.load({
       }
 
       step(dt) {
-        this.time += dt;
+        this.time += dt * this.speed;
         this.rebuildHash();
-        this.stepFish(dt);
-        this.stepSharks(dt);
+        this.stepFish(dt * this.speed);
+        this.stepSharks(dt * this.speed);
         this.respawn();
       }
 
@@ -839,6 +867,7 @@ window.__ModuleLoader__.load({
         this.rows = 0;
         this.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
         this.dark = true;
+        this.gridScale = 1;
 
         this.dotKind = new Uint8Array(0);
         this.dotPhase = new Float32Array(0);
@@ -888,6 +917,14 @@ window.__ModuleLoader__.load({
         if (this.dark === dark) return;
         this.dark = dark;
         this.fishStyles = FISH_ALPHAS.map((a) => (dark ? `rgba(230,238,255,${a})` : `rgba(26,34,48,${a})`));
+        if (this.cols > 0) this.paintBackground();
+      }
+
+      /** 网格线明暗倍率：1 是默认，0 表示完全不要网格。 */
+      setGridScale(scale) {
+        const next = Number.isFinite(scale) ? clamp(scale, 0, 3) : 1;
+        if (this.gridScale === next) return;
+        this.gridScale = next;
         if (this.cols > 0) this.paintBackground();
       }
 
@@ -952,6 +989,7 @@ window.__ModuleLoader__.load({
         g.fillStyle = this.dark ? DARK_BASE : LIGHT_BASE;
         g.fillRect(0, 0, W, H);
         g.setTransform(1, 0, 0, 1, 0, 0);
+        g.globalAlpha = this.gridScale;
         g.strokeStyle = this.dark ? DARK_GRID : LIGHT_GRID;
         g.lineWidth = 1;
         g.beginPath();
@@ -966,6 +1004,7 @@ window.__ModuleLoader__.load({
           g.lineTo(W * dpr, y);
         }
         g.stroke();
+        g.globalAlpha = 1;
       }
 
       render(world, dt) {
@@ -1518,13 +1557,35 @@ window.__ModuleLoader__.load({
     const STEP = 1 / 60;
     const MAX_STEPS = 4;
     const NS = 'dsh-shark-bg';
+    const ROUTE = '/dsh-shark';
+
+    /** 与宿主 src/config.js 的 DEFAULTS 保持一致；页面拿不到宿主时用它兜底。 */
+    const FALLBACK = {
+      enabled: true,
+      veil: 58,
+      veilStrong: 88,
+      sharkCount: 6,
+      sharkSize: 1,
+      fishDensity: 45,
+      speed: 1,
+      gridScale: 1,
+      still: false,
+    };
 
     const VEIL = 'color-mix(in srgb, var(--dsw-alias-bg-base) var(--shark-veil), transparent)';
     const VEIL_STRONG = 'color-mix(in srgb, var(--dsw-alias-bg-base) var(--shark-veil-strong), transparent)';
 
+    /** 遮罩浓度写在 :root 的自定义属性上，改一个变量就能整页生效。 */
+    function applyVeil(veil, veilStrong) {
+      const root = document.documentElement;
+      root.style.setProperty('--shark-veil', `${veil}%`);
+      root.style.setProperty('--shark-veil-strong', `${veilStrong}%`);
+    }
+
     const STYLE = `
       /* How much of the shell's own background stays on top of the water.
-         Raise it for a subtler ocean, lower it for a bolder one. */
+         Raise it for a subtler ocean, lower it for a bolder one. The values
+         come from the settings page (--shark-veil / --shark-veil-strong). */
       html {
         --shark-veil: 58%;
         --shark-veil-strong: 88%;
@@ -1565,6 +1626,10 @@ window.__ModuleLoader__.load({
       [class*="_composerSeat"] {
         background: linear-gradient(180deg, transparent 0px, ${VEIL_STRONG} 36px) !important;
       }
+
+      /* Nothing extra is needed for the disabled state: applyVeil() pushes both
+         variables to 100%, which turns every veil back into the shell's own
+         solid colour. */
     `;
 
     function injectCss() {
@@ -1655,23 +1720,56 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * 把一份配置套到正在运行的场景上。
+     *
+     * 只做“增量”：数量、体型、密度这类需要重建世界的改动才重建，
+     * 其余（遮罩、速度、网格）都是就地生效，不会让画面跳一下。
+     */
+    function applyConfig(scene, cfg) {
+      const prev = scene.cfg;
+      scene.cfg = cfg;
+
+      applyVeil(cfg.enabled ? cfg.veil : 100, cfg.enabled ? cfg.veilStrong : 100);
+      scene.canvas.style.display = cfg.enabled ? 'block' : 'none';
+
+      scene.world.speed = cfg.speed;
+      scene.renderer.setGridScale(cfg.gridScale);
+
+      const shapeChanged =
+        prev === undefined ||
+        prev.sharkCount !== cfg.sharkCount ||
+        prev.sharkSize !== cfg.sharkSize ||
+        prev.fishDensity !== cfg.fishDensity;
+      if (shapeChanged) scene.reseed(cfg);
+
+      scene.setPaused(cfg.still);
+    }
+
     /** Create the ocean layer, start the loop, and return a teardown. */
-    function mountOcean() {
+    function mountOcean(initial) {
       injectCss();
+      applyVeil(initial.enabled ? initial.veil : 100, initial.enabled ? initial.veilStrong : 100);
 
       const canvas = document.createElement('canvas');
       canvas.dataset.sharkOcean = '';
       canvas.setAttribute('aria-hidden', 'true');
+      canvas.style.display = initial.enabled ? 'block' : 'none';
       document.body.insertBefore(canvas, document.body.firstChild);
 
-      const world = new World(SHARKS);
+      const world = new World(sharksFor(initial.sharkCount));
+      world.sharkScale = initial.sharkSize;
+      world.fishDensity = initial.fishDensity;
+      world.speed = initial.speed;
       const renderer = new AsciiRenderer(canvas);
+      renderer.setGridScale(initial.gridScale);
       const tmp = { x: 0, y: 0 };
       let raf = 0;
       let last = 0;
       let acc = 0;
       let disposed = false;
       let visible = true;
+      let paused = initial.still;
 
       const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
 
@@ -1743,7 +1841,53 @@ window.__ModuleLoader__.load({
         renderer.render(world, STEP);
       }
 
-      if (reduce.matches) {
+      /** 静止模式：不推进时间，只把当前这一帧重画一遍。 */
+      function repaint() {
+        renderer.setDark(isDark());
+        renderer.render(world, STEP);
+      }
+
+      function setPaused(next) {
+        if (paused === next) return;
+        paused = next;
+        if (next) {
+          // Freeze on the frame that is already on screen instead of
+          // fast-forwarding 240 steps, which would visibly jump.
+          repaint();
+        } else {
+          last = 0;
+          acc = 0;
+          if (!raf) raf = requestAnimationFrame(frame);
+        }
+      }
+
+      /** 数量/体型/密度变化后重建世界，画面从新的布局重新开始。 */
+      function reseed(cfg) {
+        world.sharkSpecs = sharksFor(cfg.sharkCount);
+        world.sharkScale = cfg.sharkSize;
+        world.fishDensity = cfg.fishDensity;
+        world.fishCount = undefined;
+        world.width = 0;
+        world.fish = [];
+        world.sharks = [];
+        world.events = [];
+        world.resize(window.innerWidth, window.innerHeight, renderer.cw, renderer.ch);
+        if (paused) still();
+      }
+
+      const scene = {
+        canvas,
+        world,
+        renderer,
+        // Seed the baseline with what mountOcean already built, so the first
+        // applyConfig only rebuilds when the Host value actually differs.
+        cfg: initial,
+        setPaused,
+        reseed,
+      };
+
+      if (reduce.matches) paused = true;
+      if (paused) {
         still();
       } else {
         raf = requestAnimationFrame(frame);
@@ -1774,7 +1918,7 @@ window.__ModuleLoader__.load({
       document.addEventListener('visibilitychange', onVisibility);
       window.addEventListener('blur', onBlur);
 
-      return () => {
+      scene.dispose = () => {
         disposed = true;
         if (raf) cancelAnimationFrame(raf);
         clearTimeout(probeTimer);
@@ -1791,14 +1935,440 @@ window.__ModuleLoader__.load({
         world.fish.length = 0;
         world.sharks.length = 0;
         void tmp;
+        void repaint;
       };
+
+      return scene;
+    }
+
+    // ── settings bridge ──────────────────────────────────────────────────
+    // The page writes through the Host route; the ocean listens for the
+    // broadcast so a change lands on screen without a reload.
+    const CONFIG_EVENT = 'dsh-shark-bg:config';
+
+    /** 客户端侧的兜底归一化：宿主给的值越界时也不至于把画面搞坏。 */
+    function normalizeClientConfig(raw) {
+      const source = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+      const out = { ...FALLBACK };
+      for (const key of Object.keys(FALLBACK)) {
+        if (typeof FALLBACK[key] === 'boolean') {
+          if (typeof source[key] === 'boolean') out[key] = source[key];
+        } else if (Number.isFinite(Number(source[key]))) {
+          out[key] = Number(source[key]);
+        }
+      }
+      return out;
+    }
+
+    async function fetchConfig() {
+      try {
+        const response = await fetch(`${ROUTE}/state`, { headers: { accept: 'application/json' } });
+        if (!response.ok) return undefined;
+        const data = await response.json();
+        return normalizeClientConfig(data?.state);
+      } catch {
+        return undefined;
+      }
+    }
+
+    // ── settings page ────────────────────────────────────────────────────
+    const PANEL_CSS = `.dsh-shark{
+  --r-border:var(--dsw-alias-border-l1,#e5e6eb);
+  --r-border-strong:var(--dsw-alias-border-l2,#c9cdd4);
+  --r-hover:var(--dsw-alias-interactive-bg-hover,rgba(31,35,41,.05));
+  --r-bg:var(--dsw-alias-bg-layer-1,#fff);
+  --r-text:var(--dsw-alias-label-primary,#1f2329);
+  --r-secondary:var(--dsw-alias-label-secondary,#646a73);
+  --r-muted:var(--dsw-alias-label-tertiary,#8f959e);
+  --r-accent:var(--dsw-alias-button-info-fill,#4d6bfe);
+  --r-danger:var(--dsw-alias-state-error-primary,#d92d20);
+  max-width:720px;margin:0 auto;color:var(--r-text);font-size:13px;line-height:1.6;
+}
+.dsh-shark__page{height:100%;overflow:auto;padding:30px 38px 56px;box-sizing:border-box;background:transparent}
+.dsh-shark__title{font-size:16px;font-weight:600;margin:0 0 4px}
+.dsh-shark__hint{color:var(--r-secondary);font-size:12px;margin:0 0 18px}
+.dsh-shark__row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--r-border)}
+.dsh-shark__row:last-child{border-bottom:none}
+.dsh-shark__label{font-size:13px;font-weight:500}
+.dsh-shark__note{color:var(--r-muted);font-size:12px;margin-top:2px}
+.dsh-shark__control{flex:none;min-width:230px;display:flex;align-items:center;justify-content:flex-end;gap:10px}
+.dsh-shark__control input[type=range]{width:150px;accent-color:var(--r-accent)}
+.dsh-shark__value{min-width:52px;text-align:right;font-variant-numeric:tabular-nums;color:var(--r-secondary);font-size:12px}
+.dsh-shark__switch{position:relative;width:38px;height:22px;flex:none}
+.dsh-shark__switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.dsh-shark__track{display:block;width:38px;height:22px;border-radius:11px;background:var(--r-border-strong);transition:background .15s;position:relative}
+.dsh-shark__track::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.dsh-shark__switch input:checked + .dsh-shark__track{background:var(--r-accent)}
+.dsh-shark__switch input:checked + .dsh-shark__track::after{transform:translateX(16px)}
+.dsh-shark__actions{display:flex;gap:10px;margin-top:20px}
+.dsh-shark__btn{font:inherit;color:var(--r-text);background:var(--r-bg);border:1px solid var(--r-border);border-radius:9px;padding:6px 16px;cursor:pointer}
+.dsh-shark__btn:hover{background:var(--r-hover)}
+.dsh-shark__btn.primary{background:var(--r-accent);border-color:var(--r-accent);color:#fff}
+.dsh-shark__status{margin-top:10px;font-size:12px;color:var(--r-muted);min-height:18px}
+.dsh-shark__status.error{color:var(--r-danger)}
+@media (max-width:640px){
+  .dsh-shark__page{padding:20px 18px 40px}
+  .dsh-shark__row{flex-direction:column;gap:8px}
+  .dsh-shark__control{width:100%;justify-content:flex-start}
+}
+`;
+
+    function injectPanelCss() {
+      const tag = `${NS}-panel`;
+      if (document.querySelector(`style[data-plugin-css="${tag}"]`)) return;
+      const style = document.createElement('style');
+      style.dataset.pluginCss = tag;
+      style.textContent = PANEL_CSS;
+      document.head.appendChild(style);
+    }
+
+    const zh = {
+      nav: '鲨鱼背景',
+      title: '背景鲨鱼',
+      hint: '在界面背后游动的 ASCII 鲨鱼。改动即时生效，不需要刷新页面。',
+      enabled: '启用背景',
+      enabledHint: '关掉后画面恢复成默认外观，设置会保留。',
+      veil: '界面遮罩',
+      veilHint: '越大海水越淡、文字越清楚；越小鲨鱼越明显。',
+      veilStrong: '输入区遮罩',
+      veilStrongHint: '底部输入框与聊天流交界处的浓度，太小会影响打字时的可读性。',
+      sharkCount: '鲨鱼数量',
+      sharkCountHint: '0 表示只留海水与鱼群。数量多时会依次加入更小的种类。',
+      sharkSize: '鲨鱼体型',
+      sharkSizeHint: '相对默认尺寸的倍率。',
+      fishDensity: '鱼群密度',
+      fishDensityHint: '0 表示没有小鱼，只有鲨鱼。',
+      speed: '游速',
+      speedHint: '整体时间流速，1 是原始速度。',
+      gridScale: '网格浓度',
+      gridScaleHint: '背景网格线的明显程度，0 表示完全去掉。',
+      still: '静止画面',
+      stillHint: '不播放动画，只保留一帧。省电，也适合截图。',
+      reset: '恢复默认',
+      reload: '重新载入',
+      saving: '保存中…',
+      saved: '已保存',
+      loadFailed: '读取设置失败',
+      saveFailed: '保存失败',
+      unavailable: '无法连接宿主服务，请确认插件已加载。',
+    };
+
+    const en = {
+      nav: 'Shark background',
+      title: 'Background sharks',
+      hint: 'ASCII sharks swimming behind the interface. Changes apply immediately, no reload needed.',
+      enabled: 'Enable the background',
+      enabledHint: 'Turning it off restores the default look; the settings are kept.',
+      veil: 'Interface veil',
+      veilHint: 'Higher fades the water and sharpens the text; lower makes the sharks bolder.',
+      veilStrong: 'Composer veil',
+      veilStrongHint: 'Density at the bottom edge where the chat meets the input box.',
+      sharkCount: 'Shark count',
+      sharkCountHint: '0 leaves only water and fish. Extra sharks add smaller species in turn.',
+      sharkSize: 'Shark size',
+      sharkSizeHint: 'Multiplier on the default body length.',
+      fishDensity: 'Fish density',
+      fishDensityHint: '0 removes the schools and leaves only sharks.',
+      speed: 'Swim speed',
+      speedHint: 'Overall time scale; 1 is the original speed.',
+      gridScale: 'Grid density',
+      gridScaleHint: 'How visible the background grid is; 0 removes it.',
+      still: 'Still frame',
+      stillHint: 'Freeze the animation on one frame. Saves power and suits screenshots.',
+      reset: 'Restore defaults',
+      reload: 'Reload',
+      saving: 'Saving…',
+      saved: 'Saved',
+      loadFailed: 'Could not load the settings',
+      saveFailed: 'Could not save',
+      unavailable: 'Host service unreachable — check that the plugin is loaded.',
+    };
+
+    /** 一行滑块；数值由宿主归一化后回传，这里只负责显示。 */
+    function Slider(props) {
+      const { id, label, note, value, min, max, step, format, disabled, onChange, t } = props;
+      return React.createElement('div', { className: 'dsh-shark__row' },
+        React.createElement('div', null,
+          React.createElement('div', { className: 'dsh-shark__label' }, label),
+          React.createElement('div', { className: 'dsh-shark__note' }, note)),
+        React.createElement('div', { className: 'dsh-shark__control' },
+          React.createElement('input', {
+            id,
+            type: 'range',
+            min,
+            max,
+            step,
+            value,
+            disabled,
+            onChange: (event) => onChange(Number(event.target.value)),
+          }),
+          React.createElement('span', { className: 'dsh-shark__value' },
+            format ? format(value) : String(value))))
+    }
+
+    function Toggle(props) {
+      const { id, label, note, checked, disabled, onChange } = props;
+      return React.createElement('div', { className: 'dsh-shark__row' },
+        React.createElement('div', null,
+          React.createElement('div', { className: 'dsh-shark__label' }, label),
+          React.createElement('div', { className: 'dsh-shark__note' }, note)),
+        React.createElement('div', { className: 'dsh-shark__control' },
+          React.createElement('label', { className: 'dsh-shark__switch' },
+            React.createElement('input', {
+              id,
+              type: 'checkbox',
+              checked,
+              disabled,
+              onChange: (event) => onChange(event.target.checked),
+            }),
+            React.createElement('span', { className: 'dsh-shark__track' })))
+      )
+    }
+
+    async function requestState(method, body) {
+      const response = await fetch(`${ROUTE}/state`, {
+        method,
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        data = undefined;
+      }
+      if (!response.ok) {
+        const detail = data && typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`;
+        throw new Error(detail);
+      }
+      return data;
+    }
+
+    function SharkSettingsPage(props) {
+      const { t } = props;
+      injectPanelCss();
+      const [state, setState] = useState(null);
+      const [busy, setBusy] = useState(false);
+      const [error, setError] = useState('');
+      const [status, setStatus] = useState('');
+
+      const load = useCallback(async () => {
+        try {
+          const data = await requestState('GET');
+          setState(normalizeClientConfig(data?.state));
+          setError('');
+        } catch (failure) {
+          setError(`${t('loadFailed')}：${failure.message}`);
+        }
+      }, [t]);
+
+      useEffect(() => { load(); }, [load]);
+
+      const save = useCallback(async (patch) => {
+        // 先就地更新，滑块才跟手；失败时用服务端回传的状态覆盖回来。
+        setState((prev) => (prev ? normalizeClientConfig({ ...prev, ...patch }) : prev));
+        setBusy(true);
+        setStatus(t('saving'));
+        try {
+          const data = await requestState('POST', patch);
+          const next = normalizeClientConfig(data?.state);
+          setState(next);
+          window.dispatchEvent(new CustomEvent(CONFIG_EVENT, { detail: next }));
+          setStatus(t('saved'));
+          setError('');
+        } catch (failure) {
+          setError(`${t('saveFailed')}：${failure.message}`);
+          setStatus('');
+          load();
+        } finally {
+          setBusy(false);
+        }
+      }, [load, t]);
+
+      if (state === null) {
+        return React.createElement('div', { className: 'dsh-shark dsh-shark__page' },
+          React.createElement('h2', { className: 'dsh-shark__title' }, t('title')),
+          error
+            ? React.createElement('div', { className: 'dsh-shark__status error' }, error)
+            : React.createElement('div', { className: 'dsh-shark__status' }, t('saving')));
+      }
+
+      const disabled = busy;
+
+      return React.createElement('div', { className: 'dsh-shark dsh-shark__page' },
+        React.createElement('h2', { className: 'dsh-shark__title' }, t('title')),
+        React.createElement('p', { className: 'dsh-shark__hint' }, t('hint')),
+
+        React.createElement(Toggle, {
+          id: 'dsh-shark-enabled',
+          label: t('enabled'),
+          note: t('enabledHint'),
+          checked: state.enabled,
+          disabled,
+          onChange: (value) => save({ enabled: value }),
+        }),
+
+        React.createElement(Slider, {
+          id: 'dsh-shark-veil',
+          label: t('veil'),
+          note: t('veilHint'),
+          value: state.veil,
+          min: 0,
+          max: 100,
+          step: 1,
+          format: (value) => `${value}%`,
+          disabled,
+          onChange: (value) => save({ veil: value }),
+          t,
+        }),
+
+        React.createElement(Slider, {
+          id: 'dsh-shark-veil-strong',
+          label: t('veilStrong'),
+          note: t('veilStrongHint'),
+          value: state.veilStrong,
+          min: 0,
+          max: 100,
+          step: 1,
+          format: (value) => `${value}%`,
+          disabled,
+          onChange: (value) => save({ veilStrong: value }),
+          t,
+        }),
+
+        React.createElement(Slider, {
+          id: 'dsh-shark-count',
+          label: t('sharkCount'),
+          note: t('sharkCountHint'),
+          value: state.sharkCount,
+          min: 0,
+          max: 12,
+          step: 1,
+          disabled,
+          onChange: (value) => save({ sharkCount: value }),
+          t,
+        }),
+
+        React.createElement(Slider, {
+          id: 'dsh-shark-size',
+          label: t('sharkSize'),
+          note: t('sharkSizeHint'),
+          value: state.sharkSize,
+          min: 0.4,
+          max: 2,
+          step: 0.05,
+          format: (value) => `${value.toFixed(2)}×`,
+          disabled,
+          onChange: (value) => save({ sharkSize: value }),
+          t,
+        }),
+
+        React.createElement(Slider, {
+          id: 'dsh-shark-fish',
+          label: t('fishDensity'),
+          note: t('fishDensityHint'),
+          value: state.fishDensity,
+          min: 0,
+          max: 100,
+          step: 1,
+          format: (value) => `${value}%`,
+          disabled,
+          onChange: (value) => save({ fishDensity: value }),
+          t,
+        }),
+
+        React.createElement(Slider, {
+          id: 'dsh-shark-speed',
+          label: t('speed'),
+          note: t('speedHint'),
+          value: state.speed,
+          min: 0.2,
+          max: 3,
+          step: 0.05,
+          format: (value) => `${value.toFixed(2)}×`,
+          disabled,
+          onChange: (value) => save({ speed: value }),
+          t,
+        }),
+
+        React.createElement(Slider, {
+          id: 'dsh-shark-grid',
+          label: t('gridScale'),
+          note: t('gridScaleHint'),
+          value: state.gridScale,
+          min: 0,
+          max: 3,
+          step: 0.05,
+          format: (value) => `${value.toFixed(2)}×`,
+          disabled,
+          onChange: (value) => save({ gridScale: value }),
+          t,
+        }),
+
+        React.createElement(Toggle, {
+          id: 'dsh-shark-still',
+          label: t('still'),
+          note: t('stillHint'),
+          checked: state.still,
+          disabled,
+          onChange: (value) => save({ still: value }),
+        }),
+
+        React.createElement('div', { className: 'dsh-shark__actions' },
+          React.createElement('button', {
+            className: 'dsh-shark__btn primary',
+            onClick: () => save(FALLBACK),
+          }, t('reset')),
+          React.createElement('button', {
+            className: 'dsh-shark__btn',
+            onClick: () => load(),
+          }, t('reload'))),
+
+        error
+          ? React.createElement('div', { className: 'dsh-shark__status error' }, error)
+          : React.createElement('div', { className: 'dsh-shark__status' }, status));
+    }
+
+    function registerSettingsPage(ctx) {
+      if (typeof ctx.locale?.register === 'function') {
+        ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-shark-bg: dictionaries');
+      }
+      const t = typeof ctx.locale?.bind === 'function'
+        ? ctx.locale.bind(NS)
+        : (key) => zh[key] ?? key;
+
+      ctx.slots.inject('settings.section', function* () {
+        yield ctx.slots.register({
+          name: 'settings.section',
+          id: 'shark-bg',
+          order: 37,
+          label: () => t('nav'),
+          inject: () => ({ t }),
+        }, SharkSettingsPage);
+      });
     }
 
     const plugin = {
       name: 'dsh-shark-bg',
-      inject: [],
+      inject: ['slots', 'locale'],
       apply(ctx) {
-        ctx.effect(() => mountOcean(), 'dsh-shark-bg: ascii shark ocean layer');
+        ctx.effect(() => {
+          const started = mountOcean(FALLBACK);
+          const scene = started;
+          fetchConfig().then((cfg) => {
+            if (cfg) applyConfig(scene, cfg);
+          });
+          const onConfig = (event) => {
+            applyConfig(scene, normalizeClientConfig(event?.detail));
+          };
+          window.addEventListener(CONFIG_EVENT, onConfig);
+          return () => {
+            window.removeEventListener(CONFIG_EVENT, onConfig);
+            started.dispose();
+          };
+        }, 'dsh-shark-bg: ascii shark ocean layer');
+
+        registerSettingsPage(ctx);
       },
     };
 

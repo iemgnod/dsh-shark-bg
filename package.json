@@ -1,6 +1,6 @@
 {
   "name": "dsh-shark-bg",
-  "version": "0.1.2",
+  "version": "0.2.1",
   "private": true,
   "description": "在 Harness Web 界面背景中游动的 ASCII 鲨鱼",
   "type": "module",
@@ -26,7 +26,11 @@
     },
     "client": {
       "platform": "web",
-      "immediately": true
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale"
+      ]
     }
   },
   "icon": "icon.svg",
