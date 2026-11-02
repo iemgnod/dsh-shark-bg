@@ -5,6 +5,19 @@
   "description": "在 Harness Web 界面背景中游动的 ASCII 鲨鱼",
   "type": "module",
   "main": "src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iemgnod/dsh-shark-bg.git"
+  },
+  "homepage": "https://github.com/iemgnod/dsh-shark-bg#readme",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "theme",
+    "background",
+    "ascii",
+    "shark"
+  ],
   "exports": {
     ".": {
       "default": "./src/index.js"
@@ -17,9 +30,11 @@
     "src",
     "client",
     "docs",
+    "assets",
     "cordis.patch.yml",
     "README.md",
-    "icon.svg"
+    "icon.svg",
+    "screenshots.json"
   ],
   "dsh": {
     "bundle": {

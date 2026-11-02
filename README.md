@@ -6,7 +6,7 @@
 
 ## 效果
 
-- 6 条鲨鱼（经典鲨、双髻鲨、虎鲨、斑马鲨、灰鲭鲨、锤头鲨）按体型缩放，各自巡游与捕食，数量可在设置里调整
+- 8 种鲨鱼（经典鲨、锤头鲨、大锤头鲨、虎鲨、斑马鲨、灰鲭鲨、长尾鲨、护士鲨）按体型缩放，各自巡游与捕食，默认 6 条，数量可在设置里调整
 - 上百条小鱼按 Reynolds boids 集群，带 Couzin 盲区、警报传染和喷泉式逃逸
 - 鲨鱼有波动脊柱、转向侧倾、饥饿与进食状态
 - 无散度海流场驱动整体漂移
@@ -32,10 +32,12 @@
 ## 安装
 
 ```bash
-dsh plugin install https://github.com/iemgnod/dsh-shark-bg
+dsh plugin add https://github.com/iemgnod/dsh-shark-bg
 ```
 
-或手动安装：把仓库放进 `~/.dsh/profiles/<profile>/node_modules/dsh-shark-bg`，并在该 profile 的 `package.json` 里把 `dsh-shark-bg` 加入 `dsh.profile.bundles`。
+或在插件市场（dsh-market）的主题 Tab 里一键安装。
+
+手动安装：把仓库放进 `~/.dsh/profiles/<profile>/node_modules/dsh-shark-bg`，并在该 profile 的 `package.json` 里把 `dsh-shark-bg` 加入 `dsh.profile.bundles`。
 
 ## 设置
 
@@ -46,9 +48,9 @@ dsh plugin install https://github.com/iemgnod/dsh-shark-bg
 | 启用背景 | 关掉后界面恢复默认外观，设置会保留 |
 | 界面遮罩 | 越大海水越淡、文字越清楚；越小鲨鱼越明显（默认 40%） |
 | 输入区遮罩 | 底部输入框与聊天流交界处的浓度 |
-| 鲨鱼数量 | 0 表示只留海水与鱼群；数量多时依次加入更小的种类 |
+| 鲨鱼数量 | 0 表示只留海水与鱼群；默认 6 条，超过 8 条后循环复用同一批种类 |
 | 鲨鱼体型 | 相对默认体长的倍率 |
-| 鱼群密度 | 0 表示没有小鱼，只有鲨鱼 |
+| 鱼群密度 | 0 表示没有小鱼，只有鲨鱼；45 与原始版本相当 |
 | 游速 | 整体时间流速，1 是原始速度 |
 | 网格浓度 | 背景网格线的明显程度，0 表示完全去掉 |
 | 静止画面 | 不播放动画，只保留一帧，省电也方便截图 |
