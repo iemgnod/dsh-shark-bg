@@ -1,0 +1,36 @@
+{
+  "name": "dsh-shark-bg",
+  "version": "0.1.2",
+  "private": true,
+  "description": "在 Harness Web 界面背景中游动的 ASCII 鲨鱼",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": {
+      "default": "./src/index.js"
+    },
+    "./client": "./client/client.js",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "client",
+    "cordis.patch.yml",
+    "README.md",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "icon": "icon.svg",
+  "scripts": {
+    "pack": "npm pack --ignore-scripts"
+  }
+}

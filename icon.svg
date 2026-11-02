@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="ASCII shark ocean">
+  <rect width="64" height="64" rx="15" fill="#0b1520"/>
+  <g fill="#4d6bfe" opacity="0.18">
+    <rect x="6" y="6" width="4" height="4" rx="1"/>
+    <rect x="14" y="10" width="3" height="3" rx="1"/>
+    <rect x="50" y="14" width="4" height="4" rx="1"/>
+    <rect x="22" y="50" width="3" height="3" rx="1"/>
+    <rect x="44" y="46" width="4" height="4" rx="1"/>
+  </g>
+  <path d="M8 34c6-8 16-12 26-10l6-8 4 6 10 1c8 1 14 5 18 11-12 4-26 3-40 1-12-1-18-5-24-11z"
+        fill="none" stroke="#7aaaff" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M22 24l6-12 4 12" fill="none" stroke="#7aaaff" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M30 42l-6 12 14-6" fill="none" stroke="#7aaaff" stroke-width="2.2" stroke-linejoin="round"/>
+  <circle cx="15" cy="32" r="1.8" fill="#b7c8fe"/>
+</svg>
